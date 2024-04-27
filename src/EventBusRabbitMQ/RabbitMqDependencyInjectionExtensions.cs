@@ -1,6 +1,5 @@
 ﻿using eShop.EventBusRabbitMQ;
 using Microsoft.Extensions.DependencyInjection;
-
 namespace Microsoft.Extensions.Hosting;
 
 public static class RabbitMqDependencyInjectionExtensions
@@ -18,7 +17,11 @@ public static class RabbitMqDependencyInjectionExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.AddRabbitMQClient(connectionName, configureConnectionFactory: factory =>
+
+        builder.AddRabbitMQClient(connectionName, configureSettings: settings =>
+        {
+            settings.ConnectionString = "amqp://guest:guest@127.0.0.1:5672";
+        }, configureConnectionFactory: factory =>
         {
             ((ConnectionFactory)factory).DispatchConsumersAsync = true;
         });
