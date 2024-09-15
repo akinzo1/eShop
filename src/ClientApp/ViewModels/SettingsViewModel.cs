@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.Windows.Input;
 using eShop.ClientApp.Services;
@@ -6,31 +6,83 @@ using eShop.ClientApp.Services.AppEnvironment;
 using eShop.ClientApp.Services.Location;
 using eShop.ClientApp.Services.Settings;
 using eShop.ClientApp.ViewModels.Base;
+using Location = eShop.ClientApp.Models.Location.Location;
 
 namespace eShop.ClientApp.ViewModels;
 
 public class SettingsViewModel : ViewModelBase
 {
-    private readonly ISettingsService _settingsService;
-    private readonly ILocationService _locationService;
+    //Needed if using Android Emulator Locally. See https://learn.microsoft.com/en-us/dotnet/maui/data-cloud/local-web-services?view=net-maui-8.0#android
+    private static string _baseAddress = DeviceInfo.Platform == DevicePlatform.Android ? "10.0.2.2" : "localhost";
+    
     private readonly IAppEnvironmentService _appEnvironmentService;
-
-    private bool _useAzureServices;
+    private readonly ILocationService _locationService;
+    private readonly ISettingsService _settingsService;
     private bool _allowGpsLocation;
-    private bool _useFakeLocation;
-    private string _identityEndpoint;
+    private string _gatewayBasketEndpoint;
     private string _gatewayCatalogEndpoint;
     private string _gatewayOrdersEndpoint;
-    private string _gatewayBasketEndpoint;
+    private string _gpsWarningMessage;
+    private string _identityEndpoint;
     private double _latitude;
     private double _longitude;
-    private string _gpsWarningMessage;
+
+    private bool _useAzureServices;
+    private bool _useFakeLocation;
+
+    public SettingsViewModel(
+        ILocationService locationService, IAppEnvironmentService appEnvironmentService,
+        INavigationService navigationService, ISettingsService settingsService)
+        : base(navigationService)
+    {
+        _settingsService = settingsService;
+        _locationService = locationService;
+        _appEnvironmentService = appEnvironmentService;
+
+        _useAzureServices = !_settingsService.UseMocks;
+        _identityEndpoint = _settingsService.IdentityEndpointBase;
+        _latitude = double.Parse(_settingsService.Latitude, CultureInfo.CurrentCulture);
+        _longitude = double.Parse(_settingsService.Longitude, CultureInfo.CurrentCulture);
+        _useFakeLocation = _settingsService.UseFakeLocation;
+        _allowGpsLocation = _settingsService.AllowGpsLocation;
+        _gpsWarningMessage = string.Empty;
+
+        IdentityEndpoint =
+            !string.IsNullOrEmpty(_settingsService.IdentityEndpointBase)
+                ? _settingsService.IdentityEndpointBase
+                : $"https://{_baseAddress}:5243";
+
+        GatewayCatalogEndpoint =
+            !string.IsNullOrEmpty(_settingsService.GatewayCatalogEndpointBase)
+                ? _settingsService.GatewayCatalogEndpointBase
+                : $"http://{_baseAddress}:11632";
+
+        GatewayBasketEndpoint =
+            !string.IsNullOrEmpty(_settingsService.GatewayBasketEndpointBase)
+                ? _settingsService.GatewayBasketEndpointBase
+                : $"http://{_baseAddress}:5221";
+
+        GatewayOrdersEndpoint =
+            !string.IsNullOrEmpty(_settingsService.GatewayOrdersEndpointBase)
+                ? _settingsService.GatewayOrdersEndpointBase
+                : $"http://{_baseAddress}:11632";
+
+        ToggleMockServicesCommand = new RelayCommand(ToggleMockServices);
+
+        ToggleFakeLocationCommand = new RelayCommand(ToggleFakeLocation);
+
+        ToggleSendLocationCommand = new AsyncRelayCommand(ToggleSendLocationAsync);
+
+        ToggleAllowGpsLocationCommand = new RelayCommand(ToggleAllowGpsLocation);
+
+        UseAzureServices = !_settingsService.UseMocks;
+    }
 
     public static string TitleUseAzureServices => "Use Microservices/Containers from eShop";
 
     public string DescriptionUseAzureServices => !UseAzureServices
-                ? "Currently using mock services that are simulated objects that mimic the behavior of real services using a controlled approach. Toggle on to configure the use of microserivces/containers."
-                : "When enabling the use of microservices/containers, the app will attempt to use real services deployed as Docker/Kubernetes containers at the specified base endpoint, which will must be reachable through the network.";
+        ? "Currently using mock services that are simulated objects that mimic the behavior of real services using a controlled approach. Toggle on to configure the use of microserivces/containers."
+        : "When enabling the use of microservices/containers, the app will attempt to use real services deployed as Docker/Kubernetes containers at the specified base endpoint, which will must be reachable through the network.";
 
     public bool UseAzureServices
     {
@@ -43,12 +95,12 @@ public class SettingsViewModel : ViewModelBase
     }
 
     public string TitleUseFakeLocation => !UseFakeLocation
-                ? "Use Real Location"
-                : "Use Fake Location";
+        ? "Use Real Location"
+        : "Use Fake Location";
 
     public string DescriptionUseFakeLocation => !UseFakeLocation
-                ? "When enabling location, the app will attempt to use the location from the device."
-                : "Fake Location data is added for marketing campaign testing.";
+        ? "When enabling location, the app will attempt to use the location from the device."
+        : "Fake Location data is added for marketing campaign testing.";
 
     public bool UseFakeLocation
     {
@@ -61,12 +113,12 @@ public class SettingsViewModel : ViewModelBase
     }
 
     public string TitleAllowGpsLocation => !AllowGpsLocation
-                ? "GPS Location Disabled"
-                : "GPS Location Enabled";
+        ? "GPS Location Disabled"
+        : "GPS Location Enabled";
 
     public string DescriptionAllowGpsLocation => !AllowGpsLocation
-                ? "When disabling location, you won't receive location campaigns based upon your location."
-                : "When enabling location, you'll receive location campaigns based upon your location.";
+        ? "When disabling location, you won't receive location campaigns based upon your location."
+        : "When enabling location, you'll receive location campaigns based upon your location.";
 
     public string GpsWarningMessage
     {
@@ -99,7 +151,7 @@ public class SettingsViewModel : ViewModelBase
             }
         }
     }
-    
+
     public string GatewayOrdersEndpoint
     {
         get => _gatewayOrdersEndpoint;
@@ -112,7 +164,7 @@ public class SettingsViewModel : ViewModelBase
             }
         }
     }
-    
+
     public string GatewayBasketEndpoint
     {
         get => _gatewayBasketEndpoint;
@@ -125,7 +177,7 @@ public class SettingsViewModel : ViewModelBase
             }
         }
     }
-    
+
     public double Latitude
     {
         get => _latitude;
@@ -151,7 +203,7 @@ public class SettingsViewModel : ViewModelBase
         get => _allowGpsLocation;
         set => SetProperty(ref _allowGpsLocation, value);
     }
-    
+
     public ICommand ToggleMockServicesCommand { get; }
 
     public ICommand ToggleFakeLocationCommand { get; }
@@ -159,54 +211,6 @@ public class SettingsViewModel : ViewModelBase
     public ICommand ToggleSendLocationCommand { get; }
 
     public ICommand ToggleAllowGpsLocationCommand { get; }
-
-    public SettingsViewModel(
-        ILocationService locationService, IAppEnvironmentService appEnvironmentService,
-        INavigationService navigationService, ISettingsService settingsService)
-        : base(navigationService)
-    {
-        _settingsService = settingsService;
-        _locationService = locationService;
-        _appEnvironmentService = appEnvironmentService;
-
-        _useAzureServices = !_settingsService.UseMocks;
-        _identityEndpoint = _settingsService.IdentityEndpointBase;
-        _latitude = double.Parse(_settingsService.Latitude, CultureInfo.CurrentCulture);
-        _longitude = double.Parse(_settingsService.Longitude, CultureInfo.CurrentCulture);
-        _useFakeLocation = _settingsService.UseFakeLocation;
-        _allowGpsLocation = _settingsService.AllowGpsLocation;
-        _gpsWarningMessage = string.Empty;
-        
-        IdentityEndpoint = 
-            !string.IsNullOrEmpty(_settingsService.IdentityEndpointBase) 
-                ? _settingsService.IdentityEndpointBase 
-                : "https://localhost:5243";
-        
-        GatewayCatalogEndpoint = 
-            !string.IsNullOrEmpty(_settingsService.GatewayCatalogEndpointBase) 
-                ? _settingsService.GatewayCatalogEndpointBase 
-                : "http://localhost:5222";
-        
-        GatewayBasketEndpoint = 
-            !string.IsNullOrEmpty(_settingsService.GatewayBasketEndpointBase) 
-                ? _settingsService.GatewayBasketEndpointBase 
-                : "http://localhost:5221";
-        
-        GatewayOrdersEndpoint = 
-            !string.IsNullOrEmpty(_settingsService.GatewayOrdersEndpointBase) 
-                ? _settingsService.GatewayOrdersEndpointBase 
-                : "http://localhost:5224";
-
-        ToggleMockServicesCommand = new RelayCommand(ToggleMockServices);
-
-        ToggleFakeLocationCommand = new RelayCommand(ToggleFakeLocation);
-
-        ToggleSendLocationCommand = new AsyncRelayCommand(ToggleSendLocationAsync);
-
-        ToggleAllowGpsLocationCommand = new RelayCommand(ToggleAllowGpsLocation);
-
-        UseAzureServices = !_settingsService.UseMocks;
-    }
 
     protected override async void OnPropertyChanged(PropertyChangedEventArgs e)
     {
@@ -237,12 +241,8 @@ public class SettingsViewModel : ViewModelBase
     {
         if (!_settingsService.UseMocks)
         {
-            var locationRequest = new Models.Location.Location
-            {
-                Latitude = _latitude,
-                Longitude = _longitude
-            };
-            
+            var locationRequest = new Location {Latitude = _latitude, Longitude = _longitude};
+
             await _locationService.UpdateUserLocation(locationRequest);
         }
     }
@@ -274,12 +274,12 @@ public class SettingsViewModel : ViewModelBase
     {
         _settingsService.GatewayOrdersEndpointBase = _gatewayOrdersEndpoint;
     }
-
+    
     private void UpdateGatewayBasketEndpoint()
     {
         _settingsService.GatewayBasketEndpointBase = _gatewayBasketEndpoint;
     }
-    
+
     private void UpdateFakeLocation()
     {
         _settingsService.UseFakeLocation = _useFakeLocation;
@@ -306,7 +306,8 @@ public class SettingsViewModel : ViewModelBase
 
             if (await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>() != PermissionStatus.Granted)
             {
-                hasWhenInUseLocationPermissions = await Permissions.RequestAsync<Permissions.LocationWhenInUse>() == PermissionStatus.Granted;
+                hasWhenInUseLocationPermissions = await Permissions.RequestAsync<Permissions.LocationWhenInUse>() ==
+                                                  PermissionStatus.Granted;
             }
             else
             {
@@ -315,7 +316,8 @@ public class SettingsViewModel : ViewModelBase
 
             if (await Permissions.CheckStatusAsync<Permissions.LocationAlways>() != PermissionStatus.Granted)
             {
-                hasBackgroundLocationPermissions = await Permissions.RequestAsync<Permissions.LocationAlways>() == PermissionStatus.Granted;
+                hasBackgroundLocationPermissions = await Permissions.RequestAsync<Permissions.LocationAlways>() ==
+                                                   PermissionStatus.Granted;
             }
             else
             {
